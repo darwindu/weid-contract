@@ -1,6 +1,9 @@
+import "./strings.sol";
+
 pragma solidity ^0.4.4;
+
 /*
- *       CopyrightÂ© (2018-2020) WeBank Co., Ltd.
+ *       Copyright© (2018-2020) WeBank Co., Ltd.
  *
  *       This file is part of weidentity-contract.
  *
@@ -19,15 +22,18 @@ pragma solidity ^0.4.4;
  */
 
 contract EvidenceContract {
-
-    // block number map, hash as key
-    mapping(string => uint256) changed;
+    using strings for *;
+    // block number map, hash as key, block number (in uint256 converted string) as value
+    mapping(string => string) changed;
     // hash map, extra id as key
     mapping(string => string) extraKeyMapping;
 
     // Attribute keys
     string constant private ATTRIB_KEY_SIGNINFO = "info";
     string constant private ATTRIB_KEY_EXTRA = "extra";
+    
+    // Delimeters
+    string constant private DELIMETER_ATTRIB = "|";
 
     // Error codes
     uint256 constant private RETURN_CODE_SUCCESS = 0;
@@ -40,7 +46,7 @@ contract EvidenceContract {
         string key,
         string value,
         uint256 updated,
-        uint256 previousBlock
+        string previousBlock
     );
 
     function getLatestRelatedBlock(
@@ -48,11 +54,10 @@ contract EvidenceContract {
     ) 
         public 
         constant 
-        returns (uint256) 
+        returns (string) 
     {
         return changed[hash];
     }
-
 
     /**
      * Create evidence. Here, hash value is the key; signInfo is the base64 signature;
@@ -69,7 +74,37 @@ contract EvidenceContract {
     {
         EvidenceAttributeChanged(hash, msg.sender, ATTRIB_KEY_SIGNINFO, sig, updated, changed[hash]);
         EvidenceAttributeChanged(hash, msg.sender, ATTRIB_KEY_EXTRA, extra, updated, changed[hash]);
-        changed[hash] = block.number;
+        changed[hash] = uint2str(block.number);
+    }
+    
+    function batchCreateEvidence(
+        string hash,
+        string sig,
+        string extra,
+        uint256 updated
+    )
+        public
+    {
+        var delim = DELIMETER_ATTRIB.toSlice();
+        var hashs = hash.toSlice();
+        var segSize = hashs.count(delim) + 1;
+        var allPreviousBlockSlice = "".toSlice();
+        // Construct the previousBlock with DELIMETER_ATTRIB and set the changed[hash]
+        for (uint256 index = 0; index < segSize; index ++) {
+            string memory currentHash = hashs.split(delim).toString();
+            if (index == 0) {
+                allPreviousBlockSlice = changed[currentHash].toSlice();
+            } else {
+                allPreviousBlockSlice = (allPreviousBlockSlice.concat(delim).toSlice()).concat(changed[currentHash].toSlice()).toSlice();
+            }
+            changed[currentHash] = uint2str(block.number);
+        }
+        string memory result = allPreviousBlockSlice.toString();
+        // Construct the event and leave decoding job to SDK guys
+        EvidenceAttributeChanged(hash, msg.sender, ATTRIB_KEY_SIGNINFO, sig, updated,
+            result);
+        EvidenceAttributeChanged(hash, msg.sender, ATTRIB_KEY_EXTRA, extra, updated,
+            result);
     }
 
     /**
@@ -85,7 +120,7 @@ contract EvidenceContract {
         uint256 updated,
         string extraKey
     )
-    public
+        public
     {
         createEvidence(hash, sig, extra, updated);
         extraKeyMapping[extraKey] = hash;
@@ -109,14 +144,14 @@ contract EvidenceContract {
             return;
         }
         EvidenceAttributeChanged(hash, msg.sender, key, value, updated, changed[hash]);
-        changed[hash] = block.number;
+        changed[hash] = uint2str(block.number);
     }
 
     function isHashExist(string hash) public constant returns (bool) {
-        if (changed[hash] != 0) {
-            return true;
+        if (isEqualString(changed[hash], "")) {
+            return false;
         }
-        return false;
+        return true;
     }
 
     function isEqualString(string a, string b) private constant returns (bool) {
@@ -135,5 +170,22 @@ contract EvidenceContract {
         returns (string)
     {
         return extraKeyMapping[extraKey];
+    }
+
+    function uint2str(uint i) private constant returns (string) {
+        if (i == 0) return "0";
+        uint j = i;
+        uint length;
+        while (j != 0) {
+            length++;
+            j /= 10;
+        }
+        bytes memory bstr = new bytes(length);
+        uint k = length - 1;
+        while (i != 0) {
+            bstr[k--] = byte(48 + i % 10);
+            i /= 10;
+        }
+        return string(bstr);
     }
 }
