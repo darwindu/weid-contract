@@ -1,4 +1,6 @@
-pragma solidity ^0.4.4;
+pragma solidity ^0.4.25;
+pragma experimental ABIEncoderV2;
+
 /*
  *       Copyright© (2018-2020) WeBank Co., Ltd.
  *
@@ -29,22 +31,13 @@ contract EvidenceContract {
     uint256 constant private RETURN_CODE_SUCCESS = 0;
     uint256 constant private RETURN_CODE_FAILURE_NOT_EXIST = 500600;
 
-    // Evidence Sign event
-    event EvidenceSigned(
+    // Evidence attribute change event
+    event EvidenceAttributeChanged(
         bytes32[] hash,
         address signer,
-        bytes32[] r,
-        bytes32[] s,
-        uint8[] v,
-        uint256[] previousBlock
-    );
-
-    // Evidence Logged event
-    event EvidenceLogged(
-        bytes32[] hash,
-        address signer,
-        bytes32[] logs,
-        uint256[] logSize,
+        string[] sigs,
+        string[] logs,
+        uint256 updated,
         uint256[] previousBlock
     );
 
@@ -65,68 +58,28 @@ contract EvidenceContract {
      */
     function createEvidence(
         bytes32[] hash,
-        bytes32[] r,
-        bytes32[] s,
-        uint8[] v,
-        bytes32[] log,
-        uint256[] logSize
+        string[] sig,
+        string[] log,
+        uint256 updated
     )
         public
     {
-        createSignEvent(hash, r, s, v);
-        createLogEvent(hash, log, logSize);
-    }
-    
-    function createSignEvent(
-        bytes32[] hash,
-        bytes32[] r,
-        bytes32[] s,
-        uint8[] v
-    )
-        private
-    {
         uint256 sigSize = hash.length;
         bytes32[] memory hashs = new bytes32[](sigSize);
-        bytes32[] memory rs = new bytes32[](sigSize);
-        bytes32[] memory ss = new bytes32[](sigSize);
-        uint8[] memory vs = new uint8[](sigSize);
+        string[] memory sigs = new string[](sigSize);
+        string[] memory logs = new string[](sigSize);
         uint256[] memory previousBlocks = new uint256[](sigSize);
         for (uint256 i = 0; i < sigSize; i++) {
-            hashs[i] = hash[i];
-            rs[i] = r[i];
-            ss[i] = s[i];
-            vs[i] = v[i];
-            previousBlocks[i] = changed[hash[i]];
-            changed[hash[i]] = block.number;
-        }
-        EvidenceSigned(hashs, msg.sender, rs, ss, vs, previousBlocks);
-    }
-    
-    function createLogEvent(
-        bytes32[] hash,
-        bytes32[] log,
-        uint256[] logSize
-    )
-        private
-    {
-        uint256 hashSize = hash.length;
-        bytes32[] memory hashs = new bytes32[](hashSize);
-        uint256[] memory logSizes = new uint256[](hashSize);
-        uint256[] memory previousBlocks = new uint256[](hashSize);
-        for (uint256 i = 0; i < hashSize; i++) {
-            hashs[i] = hash[i];
-            logSizes[i] = logSize[i];
-            previousBlocks[i] = changed[hash[i]];
-            changed[hash[i]] = block.number;
-        }
-        uint256 logTotalLength = log.length;
-        bytes32[] memory logs = new bytes32[](logTotalLength);
-        for (i = 0; i < logTotalLength; i++) {
+            bytes32 thisHash = hash[i];
+            hashs[i] = thisHash;
+            sigs[i] = sig[i];
             logs[i] = log[i];
+            previousBlocks[i] = changed[thisHash];
+            changed[thisHash] = block.number;
         }
-        EvidenceLogged(hashs, msg.sender, logs, logSizes,  previousBlocks);
+        emit EvidenceAttributeChanged(hashs, msg.sender, sigs, logs, updated, previousBlocks);
     }
-    
+
     /**
      * Create evidence by extra key. Here, hash value is the key; signInfo is the base64 signature;
      * and extra is the compact json of blob: {"credentialId":"aacc1122-324b.."};
@@ -134,43 +87,29 @@ contract EvidenceContract {
      * This allows append operation from other signer onto a same hash, so no permission check.
      */
     function createEvidenceWithExtraKey(
-        bytes32 hash,
-        bytes32 r,
-        bytes32 s,
-        uint8 v,
-        bytes32[] log,
-        uint256 logSize,
-        string extraKey
-    )
-        public
-    {
-        bytes32[] memory hashs = new bytes32[](1);
-        bytes32[] memory rs = new bytes32[](1);
-        bytes32[] memory ss = new bytes32[](1); 
-        uint8[] memory vs = new uint8[](1);
-        uint256[] memory logSizes = new uint256[](1);
-        hashs[0] = hash;
-        rs[0] = r;
-        ss[0] = s;
-        vs[0] = v;
-        logSizes[0] = logSize;
-        uint256 logTotalLength = log.length;
-        bytes32[] memory logs = new bytes32[](logTotalLength);
-        for (uint256 i = 0; i < logTotalLength; i++) {
-            logs[i] = log[i];
-        }
-        createEvidence(hashs, rs, ss, vs, logs, logSizes);
-        extraKeyMapping[extraKey] = hash;
-    }
-
-    function addLog(
         bytes32[] hash,
-        bytes32[] log,
-        uint256[] logSize
+        string[] sig,
+        string[] log,
+        uint256 updated,
+        string[] extraKey
     )
         public
     {
-        createLogEvent(hash, log, logSize);
+        uint256 sigSize = hash.length;
+        bytes32[] memory hashs = new bytes32[](sigSize);
+        string[] memory sigs = new string[](sigSize);
+        string[] memory logs = new string[](sigSize);
+        uint256[] memory previousBlocks = new uint256[](sigSize);
+        for (uint256 i = 0; i < sigSize; i++) {
+            bytes32 thisHash = hash[i];
+            hashs[i] = thisHash;
+            sigs[i] = sig[i];
+            logs[i] = log[i];
+            previousBlocks[i] = changed[thisHash];
+            changed[thisHash] = block.number;
+            extraKeyMapping[extraKey[i]] = thisHash;
+        }
+        emit EvidenceAttributeChanged(hashs, msg.sender, sigs, logs, updated, previousBlocks);
     }
 
     function isHashExist(bytes32 hash) public constant returns (bool) {
