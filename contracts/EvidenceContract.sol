@@ -27,16 +27,22 @@ contract EvidenceContract {
     // hash map, extra id string as key, hash as value
     mapping(string => bytes32) extraKeyMapping;
 
-    // Error codes
-    uint256 constant private RETURN_CODE_SUCCESS = 0;
-    uint256 constant private RETURN_CODE_FAILURE_NOT_EXIST = 500600;
-
-    // Evidence attribute change event
+    // Evidence attribute change event including signature and logs
     event EvidenceAttributeChanged(
         bytes32[] hash,
         address signer,
         string[] sigs,
         string[] logs,
+        uint256 updated,
+        uint256[] previousBlock
+    );
+    
+    // Additional Evidence attribute change event
+    event EvidenceExtraAttributeChanged(
+        bytes32[] hash,
+        address signer,
+        string[] keys,
+        string[] values,
         uint256 updated,
         uint256[] previousBlock
     );
@@ -52,9 +58,7 @@ contract EvidenceContract {
     }
 
     /**
-     * Create evidence. Here, hash value is the key; signInfo is the base64 signature;
-     * and extra is the compact json of blob: {"credentialId":"aacc1122-324b.."}
-     * This allows append operation from other signer onto a same hash, so no permission check.
+     * Create evidence. Here, hash value is the key; signature and log are values. 
      */
     function createEvidence(
         bytes32[] hash,
@@ -81,10 +85,7 @@ contract EvidenceContract {
     }
 
     /**
-     * Create evidence by extra key. Here, hash value is the key; signInfo is the base64 signature;
-     * and extra is the compact json of blob: {"credentialId":"aacc1122-324b.."};
-     * hash can be find by extrarKey, extrarKey is business ID in business system.
-     * This allows append operation from other signer onto a same hash, so no permission check.
+     * Create evidence by extra key. As in the normal createEvidence case, this further allocates each evidence with an extra key in String format which caller can use to obtain the detailed info from within.
      */
     function createEvidenceWithExtraKey(
         bytes32[] hash,
@@ -110,6 +111,35 @@ contract EvidenceContract {
             extraKeyMapping[extraKey[i]] = thisHash;
         }
         emit EvidenceAttributeChanged(hashs, msg.sender, sigs, logs, updated, previousBlocks);
+    }
+    
+     /**
+      * Set arbitrary extra attributes to any EXISTING evidence.
+     */
+    function setAttribute(
+        bytes32[] hash,
+        string[] key,
+        string[] value,
+        uint256 updated
+    )
+        public
+    {
+        uint256 sigSize = hash.length;
+        bytes32[] memory hashs = new bytes32[](sigSize);
+        string[] memory keys = new string[](sigSize);
+        string[] memory values = new string[](sigSize);
+        uint256[] memory previousBlocks = new uint256[](sigSize);
+        for (uint256 i = 0; i < sigSize; i++) {
+            bytes32 thisHash = hash[i];
+            if (isHashExist(thisHash)) {
+                hashs[i] = thisHash;
+                keys[i] = key[i];
+                values[i] = value[i];
+                previousBlocks[i] = changed[thisHash];
+                changed[thisHash] = block.number;
+            }
+        }
+        emit EvidenceExtraAttributeChanged(hashs, msg.sender, keys, values, updated, previousBlocks);
     }
 
     function isHashExist(bytes32 hash) public constant returns (bool) {
